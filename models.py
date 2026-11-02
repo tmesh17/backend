@@ -13,6 +13,8 @@ class College(Base):
     name = Column(String, nullable=False)
     city = Column(String, nullable=False)
     state = Column(String, nullable=False)
+    university_type = Column(String, nullable=True)  # e.g., "Public Research University"
+    brand_color = Column(String, nullable=True)  # Hex color for university branding (e.g., "#4B0082" for UW purple)
     # Aggregated rating fields (computed from reviews, stored for quick lookup)
     a11y_overall = Column(Float, nullable=True)
     safety_overall = Column(Float, nullable=True)

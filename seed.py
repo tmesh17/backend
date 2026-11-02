@@ -19,30 +19,8 @@ COLLEGES = [
         "name": "University of Washington-Seattle Campus",
         "city": "Seattle",
         "state": "WA",
-        "has_disability_cultural_center": 1,
-    },
-    {
-        "id": 377555,
-        "slug": "university-of-washington-bothell-campus-bothell-wa",
-        "name": "University of Washington-Bothell Campus",
-        "city": "Bothell",
-        "state": "WA",
-        "has_disability_cultural_center": 0,
-    },
-    {
-        "id": 377564,
-        "slug": "university-of-washington-tacoma-campus-tacoma-wa",
-        "name": "University of Washington-Tacoma Campus",
-        "city": "Tacoma",
-        "state": "WA",
-        "has_disability_cultural_center": 0,
-    },
-    {
-        "id": 236939,
-        "slug": "washington-state-university-pullman-wa",
-        "name": "Washington State University-Pullman Campus",
-        "city": "Pullman",
-        "state": "WA",
+        "university_type": "Public Research University",
+        "brand_color": "#4B0082",  # UW Purple
         "has_disability_cultural_center": 1,
     },
     {
@@ -51,14 +29,8 @@ COLLEGES = [
         "name": "Washington State University-Spokane Campus",
         "city": "Spokane",
         "state": "WA",
-        "has_disability_cultural_center": 0,
-    },
-    {
-        "id": 236941,
-        "slug": "washington-state-university-tricities-campus-richland-wa",
-        "name": "Washington State University-Tri-Cities Campus",
-        "city": "Richland",
-        "state": "WA",
+        "university_type": "Public Research University",
+        "brand_color": "#981E32",  # WSU Crimson
         "has_disability_cultural_center": 0,
     },
 ]
@@ -92,49 +64,6 @@ REVIEWS = [
      "ECC, Black Student Union, NAMI on Campus",
      3, 4, 5, 3, 4, 5, 3, 3),
 
-    # --- UW Bothell ---
-    ("university-of-washington-bothell-campus-bothell-wa",
-     ["Learning Disability", "ADHD"],
-     "I receive extended test time and a quiet testing environment. The Disability Support Services office is easy to reach.",
-     "The smaller campus size made it easier to connect with faculty and get to know my classmates.",
-     "There are fewer disability-specific student groups compared to the Seattle campus.",
-     "DSS peer mentoring, study skills workshops",
-     4, 4, 5, 4, 5, 4, 3, 5),
-
-    # --- UW Tacoma ---
-    ("university-of-washington-tacoma-campus-tacoma-wa",
-     ["Hearing Impairment"],
-     "I use ASL interpreters and captioning services. The DRS office coordinated everything well.",
-     "The campus is modern and accessible, and faculty have been responsive to my needs.",
-     "Finding ASL interpreters for certain specialized courses was sometimes challenging.",
-     "Deaf community meetups, ASL Club",
-     4, 4, 4, 5, 5, 5, 4, 4),
-
-    # --- WSU Pullman ---
-    ("washington-state-university-pullman-wa",
-     ["Mobility Impairment"],
-     "I use accessible parking and a mobility cart for getting around campus. The ATWS (Access Center) helped set this up.",
-     "The campus community is friendly and I found strong support through the Access Center peer group.",
-     "The campus is very hilly and spread out, which is challenging even with the mobility cart.",
-     "Access Center peer group, MOVE mobility club",
-     3, 4, 3, 4, 4, 2, 3, 4),
-
-    ("washington-state-university-pullman-wa",
-     ["LGBTQ+", "Neurodivergent"],
-     "I receive accommodations for my ADHD including extended test time and a distraction-reduced testing room.",
-     "I found a welcoming LGBTQ+ community through the Gender and Sexuality Alliance on campus.",
-     "Some faculty were not familiar with neurodivergent accommodations and needed extra explanation.",
-     "GSA, Neurodiversity Student Organization",
-     3, 5, 4, 3, 4, 4, 4, 4),
-
-    ("washington-state-university-pullman-wa",
-     ["Visual Impairment"],
-     "I use screen reader software and accessible digital materials. The Access Center provides textbooks in alternative formats.",
-     "The faculty have been generally accommodating and willing to provide materials early.",
-     "Some online course platforms are not fully screen-reader compatible.",
-     "Access Center tech support group",
-     4, 4, 4, 5, 5, 3, 4, 5),
-
     # --- WSU Spokane ---
     ("washington-state-university-spokane-campus-spokane-wa",
      ["Mental Health Condition"],
@@ -144,14 +73,21 @@ REVIEWS = [
      "Wellness group, pharmacy student support network",
      5, 5, 5, 4, 5, 5, 3, 4),
 
-    # --- WSU Tri-Cities ---
-    ("washington-state-university-tricities-campus-richland-wa",
-     ["Chronic Health Condition", "POC"],
-     "I receive flexible attendance accommodations for my chronic illness. The process was straightforward.",
-     "The small campus environment means faculty are very accessible and understanding.",
-     "There are very few disability-specific student groups or communities on this campus.",
-     "Engineering peer study group, MESA student program",
-     4, 4, 5, 5, 5, 4, 2, 4),
+    ("washington-state-university-spokane-campus-spokane-wa",
+     ["Hearing Impairment"],
+     "I use ASL interpreters and captioning services. The DRS office coordinated everything well.",
+     "The campus is modern and accessible, and faculty have been responsive to my needs.",
+     "Finding ASL interpreters for certain specialized courses was sometimes challenging.",
+     "Deaf community meetups, ASL Club",
+     4, 4, 4, 5, 5, 5, 4, 4),
+
+    ("washington-state-university-spokane-campus-spokane-wa",
+     ["Learning Disability", "ADHD"],
+     "I receive extended test time and a quiet testing environment. The Disability Support Services office is easy to reach.",
+     "The smaller campus size made it easier to connect with faculty and get to know my classmates.",
+     "There are fewer disability-specific student groups compared to larger campuses.",
+     "DSS peer mentoring, study skills workshops",
+     4, 4, 5, 4, 5, 4, 3, 5),
 ]
 
 

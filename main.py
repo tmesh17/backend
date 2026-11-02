@@ -73,6 +73,8 @@ def college_to_dict(college: College, db: Session) -> dict:
         "name": college.name,
         "city": college.city,
         "state": college.state,
+        "university_type": college.university_type,
+        "brand_color": college.brand_color,
         "ratings": ratings if ratings else None,
         "num_reviews": review_count,
     }

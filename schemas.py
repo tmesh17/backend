@@ -12,6 +12,8 @@ class CollegeResponse(BaseModel):
     name: str
     city: str
     state: str
+    university_type: Optional[str] = None
+    brand_color: Optional[str] = None
     ratings: Optional[dict] = None  # {a11y_overall, safety_overall, inclusivity_overall}
     num_reviews: Optional[int] = None
 
