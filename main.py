@@ -22,13 +22,12 @@ from sqlalchemy import func
 from dotenv import load_dotenv
 
 from database import engine, Base, get_db
-from models import College, Review, EmailSubscription
+from models import College, Review, EmailSubscription, UniversityAccessibilityInfo, UniversitySummary
 from schemas import (
     ReviewSubmission,
     EmailSubmission,
     EmailResponse,
 )
-from auth import verify_token
 
 load_dotenv()
 
@@ -51,6 +50,101 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 # Helper: serialize a College ORM object into the JSON shape the frontend expects
 # ---------------------------------------------------------------------------
+def accessibility_info_to_dict(accessibility_info: UniversityAccessibilityInfo) -> dict:
+    """Serialize accessibility info, only including non-null fields."""
+    if not accessibility_info:
+        return {}
+    
+    result = {}
+    if accessibility_info.dso_phone:
+        result["dso_phone"] = accessibility_info.dso_phone
+    if accessibility_info.dso_email:
+        result["dso_email"] = accessibility_info.dso_email
+    if accessibility_info.dso_url:
+        result["dso_url"] = accessibility_info.dso_url
+    if accessibility_info.has_disability_cultural_center:
+        result["has_disability_cultural_center"] = bool(accessibility_info.has_disability_cultural_center)
+    if accessibility_info.has_deaf_culture_center:
+        result["has_deaf_culture_center"] = bool(accessibility_info.has_deaf_culture_center)
+    if accessibility_info.has_disability_studies_program:
+        result["has_disability_studies_program"] = bool(accessibility_info.has_disability_studies_program)
+    if accessibility_info.has_asl_program:
+        result["has_asl_program"] = bool(accessibility_info.has_asl_program)
+    if accessibility_info.accommodations_provided:
+        result["accommodations_provided"] = [
+            a.strip() for a in accessibility_info.accommodations_provided.split(",")
+        ]
+    if accessibility_info.campus_accessibility_notes:
+        result["campus_accessibility_notes"] = accessibility_info.campus_accessibility_notes
+    if accessibility_info.counseling_services:
+        result["counseling_services"] = accessibility_info.counseling_services
+    if accessibility_info.health_services:
+        result["health_services"] = accessibility_info.health_services
+    
+    return result if result else None
+
+
+def university_summary_to_dict(summary: UniversitySummary) -> dict:
+    """Serialize university summary, only including non-null fields."""
+    if not summary:
+        return {}
+    
+    result = {}
+    if summary.website_url:
+        result["website_url"] = summary.website_url
+    if summary.school_type:
+        result["school_type"] = summary.school_type
+    if summary.total_enrollment:
+        result["total_enrollment"] = summary.total_enrollment
+    if summary.undergrad_enrollment:
+        result["undergrad_enrollment"] = summary.undergrad_enrollment
+    if summary.degrees_awarded:
+        result["degrees_awarded"] = [
+            d.strip() for d in summary.degrees_awarded.split(",")
+        ]
+    if summary.school_ownership:
+        result["school_ownership"] = summary.school_ownership
+    
+    return result if result else None
+
+
+def calculate_category_rating_averages(college_slug: str, db: Session) -> dict:
+    """Calculate average ratings for each category based on all reviews for this college."""
+    import json
+    
+    reviews = db.query(Review).filter(Review.college_slug == college_slug).all()
+    if not reviews:
+        return {}
+    
+    # Aggregate all category ratings
+    category_totals = {}
+    category_counts = {}
+    
+    for review in reviews:
+        if review.category_ratings:
+            try:
+                ratings = json.loads(review.category_ratings)
+                for category, rating in ratings.items():
+                    if category not in category_totals:
+                        category_totals[category] = 0
+                        category_counts[category] = 0
+                    category_totals[category] += rating
+                    category_counts[category] += 1
+            except:
+                pass
+    
+    # Calculate averages
+    averages = {}
+    for category, total in category_totals.items():
+        count = category_counts[category]
+        averages[category] = {
+            "average": round(total / count, 2),
+            "count": count
+        }
+    
+    return averages
+
+
 def college_to_dict(college: College, db: Session) -> dict:
     review_count = (
         db.query(func.count(Review.id))
@@ -67,7 +161,21 @@ def college_to_dict(college: College, db: Session) -> dict:
     if college.inclusivity_overall is not None:
         ratings["inclusivity_overall"] = college.inclusivity_overall
 
-    return {
+    # Fetch accessibility info for this college
+    accessibility_info = (
+        db.query(UniversityAccessibilityInfo)
+        .filter(UniversityAccessibilityInfo.college_slug == college.slug)
+        .first()
+    )
+
+    # Fetch university summary for this college
+    university_summary = (
+        db.query(UniversitySummary)
+        .filter(UniversitySummary.college_slug == college.slug)
+        .first()
+    )
+
+    result = {
         "id": college.id,
         "slug": college.slug,
         "name": college.name,
@@ -78,46 +186,64 @@ def college_to_dict(college: College, db: Session) -> dict:
         "ratings": ratings if ratings else None,
         "num_reviews": review_count,
     }
+    
+    # Include accessibility info if available
+    a11y_dict = accessibility_info_to_dict(accessibility_info)
+    if a11y_dict:
+        result["accessibility_info"] = a11y_dict
+    
+    # Include university summary if available
+    summary_dict = university_summary_to_dict(university_summary)
+    if summary_dict:
+        result["university_summary"] = summary_dict
+    
+    # Include category rating averages if available
+    category_ratings = calculate_category_rating_averages(college.slug, db)
+    if category_ratings:
+        result["category_rating_averages"] = category_ratings
+    
+    return result
 
 
 def review_to_dict(review: Review) -> dict:
     """Serialize a Review ORM object into the JSON shape the frontend expects."""
-    # Compute aggregate ratings from individual rating fields
-    a11y_fields = [
-        review.campus_accessibility,
-        review.accommodations_reliability,
-        review.disability_community_access,
-    ]
-    a11y_vals = [v for v in a11y_fields if v is not None]
-
-    safety_vals = [review.campus_safety] if review.campus_safety is not None else []
-
-    incl_fields = [
-        review.peer_inclusivity,
-        review.institution_inclusivity,
-        review.student_language,
-        review.staff_language,
-    ]
-    incl_vals = [v for v in incl_fields if v is not None]
-
+    import json
+    
     ratings = {
-        "a11y_overall": round(sum(a11y_vals) / len(a11y_vals), 2) if a11y_vals else 0,
-        "safety_overall": round(sum(safety_vals) / len(safety_vals), 2) if safety_vals else 0,
-        "inclusivity_overall": round(sum(incl_vals) / len(incl_vals), 2) if incl_vals else 0,
+        "accessibility": review.accessibility_rating or 0,
+        "safety": review.safety_rating or 0,
+        "inclusivity": review.inclusivity_rating or 0,
     }
 
-    # Parse identities from comma-separated string to list
-    identities = review.identities.split(",") if review.identities else []
+    # Parse category ratings from JSON if available
+    category_ratings = {}
+    if review.category_ratings:
+        try:
+            category_ratings = json.loads(review.category_ratings)
+        except:
+            pass
+
+    # Parse topics from comma-separated string
+    topics = review.topics.split(",") if review.topics else []
 
     return {
         "id": review.id,
         "review_date": review.review_date,
-        "identities": identities,
-        "share_accommodations_text": review.share_accommodations_text,
-        "share_positive_text": review.share_positive_text,
-        "share_challenges_text": review.share_challenges_text,
-        "share_groups_text": review.share_groups_text,
+        "relationship_to_university": review.relationship_to_university,
+        "attendance_start_year": review.attendance_start_year,
+        "attendance_end_year": review.attendance_end_year,
         "ratings": ratings,
+        "experience_text": review.experience_text,
+        "topics": topics,
+        "category_ratings": category_ratings,
+        "reviewer_context": {
+            "age_category": review.age_category,
+            "race_ethnicity": review.race_ethnicity,
+            "race_ethnicity_text": review.race_ethnicity_text,
+            "first_generation_student": review.first_generation_student,
+            "disability_identity": review.disability_identity,
+            "lgbtq_identity": review.lgbtq_identity,
+        },
     }
 
 
@@ -212,18 +338,11 @@ def submit_review(
     db: Session = Depends(get_db),
 ):
     """
-    Submit a review. Requires a valid Supabase JWT in the Authorization header.
+    Submit a review. Authentication is optional.
     The frontend sends: { answers: { ... } }
     """
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=401,
-            detail="Missing authentication token. Please sign in.",
-        )
-
-    token = authorization.replace("Bearer ", "")
-    user = verify_token(token)  # Raises 401 if invalid
-
+    import json
+    
     answers = submission.answers
     college_slug = answers.get("college_slug")
     if not college_slug:
@@ -240,61 +359,68 @@ def submit_review(
             detail=f"College not found: {college_slug}",
         )
 
-    # Create the review
-    def to_int(val):
-        try:
-            return int(val) if val is not None else None
-        except (ValueError, TypeError):
-            return None
-
-    def to_list_str(val):
-        if isinstance(val, list):
-            return ",".join(str(v) for v in val)
-        return str(val) if val is not None else None
-
+    # Helper functions for type conversion
     def to_float(val):
         try:
             return float(val) if val is not None else None
         except (ValueError, TypeError):
             return None
 
+    def to_int(val):
+        try:
+            return int(val) if val is not None else None
+        except (ValueError, TypeError):
+            return None
+
+    def to_str(val):
+        if isinstance(val, list):
+            return ",".join(str(v) for v in val)
+        return str(val) if val is not None else None
+
+    # Build category_ratings JSON
+    category_ratings = {}
+    rating_mappings = {
+        "disability_services_rating": "disability_services",
+        "academic_accomodations_rating": "academic_accomodations",
+        "physical_accessibility_rating": "physical_accessibility",
+        "accessible_housing_rating": "accessible_housing",
+        "transportation_rating": "transportation",
+        "digital_accessibility_rating": "digital_accessibility",
+        "lgbtq_inclusion_rating": "lgbtq_inclusion",
+        "racial_cultural_inclusion_rating": "racial_cultural_inclusion",
+        "religious_tolerance_rating": "religious_tolerance",
+        "campus_diversity_rating": "campus_diversity",
+        "peer_support_rating": "peer_support",
+        "liberal_climate_rating": "liberal_climate",
+    }
+    
+    for question_id, field_name in rating_mappings.items():
+        if question_id in answers:
+            rating_val = to_float(answers[question_id])
+            if rating_val is not None:
+                category_ratings[field_name] = rating_val
+
+    # Create the review with new schema
     review = Review(
         id=str(uuid.uuid4()),
         college_slug=college_slug,
-        review_date="2025-01-15",  # Could use actual current date
-        identities=None,  # Could derive from lgbtq_identity, poc_identity, disability_identity
-        share_accommodations_text=answers.get("share_accommodations"),
-        share_positive_text=answers.get("share_positive"),
-        share_challenges_text=answers.get("share_challenges"),
-        share_groups_text=answers.get("share_community_groups"),
-        campus_safety=to_float(answers.get("campus_safety")),
-        peer_inclusivity=to_float(answers.get("peer_inclusivity")),
-        institution_inclusivity=to_float(answers.get("institution_inclusivity")),
-        student_language=to_float(answers.get("student_language")),
-        staff_language=to_float(answers.get("staff_language")),
-        campus_accessibility=to_float(answers.get("campus_accessibility")),
-        disability_community_access=to_float(answers.get("disability_community_access")),
-        accommodations_reliability=to_float(answers.get("accommodations_reliability")),
-        attendance_start=to_int(answers.get("attendance_start")),
-        attendance_end=to_int(answers.get("attendance_end")),
-        use_a11y_services=answers.get("use_a11y_services"),
-        is_lgbtq=answers.get("is_lgbtq"),
-        lgbtq_identity=to_list_str(answers.get("lgbtq_identity")),
-        is_poc=answers.get("is_poc"),
-        poc_identity=to_list_str(answers.get("poc_identity")),
-        is_disabled=answers.get("is_disabled"),
-        disability_identity=to_list_str(answers.get("disability_identity")),
+        review_date="2025-01-15",
+        relationship_to_university=answers.get("relationship_to_university"),
+        attendance_start_year=to_int(answers.get("attendance_years_start")),
+        attendance_end_year=to_int(answers.get("attendance_years_end")),
+        accessibility_rating=to_float(answers.get("accessibility_rating")),
+        safety_rating=to_float(answers.get("safety_rating")),
+        inclusivity_rating=to_float(answers.get("inclusivity_rating")),
+        experience_text=answers.get("experience_text"),
+        topics=to_str(answers.get("topics")),
+        category_ratings=json.dumps(category_ratings) if category_ratings else None,
+        age_category=answers.get("age_category"),
+        race_ethnicity=answers.get("race_ethnicity"),
+        race_ethnicity_text=answers.get("race_ethnicity_text"),
+        first_generation_student=answers.get("first_generation_student"),
+        disability_identity=answers.get("disability_identity"),
+        lgbtq_identity=answers.get("lgbtq_identity"),
     )
-
-    # Build identities list from demographic answers
-    identities = []
-    if review.lgbtq_identity and review.is_lgbtq == "yes":
-        identities.extend(review.lgbtq_identity.split(","))
-    if review.poc_identity and review.is_poc == "yes":
-        identities.extend(review.poc_identity.split(","))
-    if review.disability_identity and review.is_disabled == "yes":
-        identities.extend(review.disability_identity.split(","))
-    review.identities = ",".join(identities) if identities else None
 
     db.add(review)
     db.commit()
@@ -339,18 +465,14 @@ def _update_college_ratings(db: Session, college: College):
         nums = [v for v in vals if v is not None]
         return round(sum(nums) / len(nums), 2) if nums else None
 
-    # Accessibility = average of campus_accessibility, accommodations_reliability, disability_community_access
-    a11y_all = []
-    for r in reviews:
-        a11y_all.extend([r.campus_accessibility, r.accommodations_reliability, r.disability_community_access])
-    college.a11y_overall = avg(a11y_all)
+    # Accessibility = average of accessibility_rating
+    a11y_vals = [r.accessibility_rating for r in reviews if r.accessibility_rating is not None]
+    college.a11y_overall = avg(a11y_vals)
 
-    # Safety
-    safety_vals = [r.campus_safety for r in reviews if r.campus_safety is not None]
+    # Safety = average of safety_rating
+    safety_vals = [r.safety_rating for r in reviews if r.safety_rating is not None]
     college.safety_overall = avg(safety_vals)
 
-    # Inclusivity = average of peer_inclusivity, institution_inclusivity, student_language, staff_language
-    incl_all = []
-    for r in reviews:
-        incl_all.extend([r.peer_inclusivity, r.institution_inclusivity, r.student_language, r.staff_language])
-    college.inclusivity_overall = avg(incl_all)
+    # Inclusivity = average of inclusivity_rating
+    incl_vals = [r.inclusivity_rating for r in reviews if r.inclusivity_rating is not None]
+    college.inclusivity_overall = avg(incl_vals)

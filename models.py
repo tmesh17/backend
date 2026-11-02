@@ -30,36 +30,97 @@ class Review(Base):
     college_slug = Column(String, index=True, nullable=False)
     review_date = Column(String, nullable=False)  # ISO date string
 
-    # Identity tags stored as comma-separated string
-    identities = Column(String, nullable=True)
+    # Step 1: University and Role
+    relationship_to_university = Column(String, nullable=True)  # current_student, former_student, alumni, faculty, staff, other
+    attendance_start_year = Column(Integer, nullable=True)
+    attendance_end_year = Column(Integer, nullable=True)
 
-    # Free-response text fields
-    share_accommodations_text = Column(String, nullable=True)
-    share_positive_text = Column(String, nullable=True)
-    share_challenges_text = Column(String, nullable=True)
-    share_groups_text = Column(String, nullable=True)
+    # Step 2: Overall Rating
+    accessibility_rating = Column(Float, nullable=True)  # 1-5
+    safety_rating = Column(Float, nullable=True)  # 1-5
+    inclusivity_rating = Column(Float, nullable=True)  # 1-5
 
-    # Rating fields (individual review, 1-5 scale)
-    campus_safety = Column(Float, nullable=True)
-    peer_inclusivity = Column(Float, nullable=True)
-    institution_inclusivity = Column(Float, nullable=True)
-    student_language = Column(Float, nullable=True)
-    staff_language = Column(Float, nullable=True)
-    campus_accessibility = Column(Float, nullable=True)
-    disability_community_access = Column(Float, nullable=True)
-    accommodations_reliability = Column(Float, nullable=True)
+    # Step 3: Written Experience
+    experience_text = Column(String, nullable=True)  # What they want others to know
 
-    # Demographic fields
-    attendance_start = Column(Integer, nullable=True)
-    attendance_end = Column(Integer, nullable=True)
-    use_a11y_services = Column(String, nullable=True)
-    is_lgbtq = Column(String, nullable=True)
-    lgbtq_identity = Column(String, nullable=True)
-    is_poc = Column(String, nullable=True)
-    poc_identity = Column(String, nullable=True)
-    is_disabled = Column(String, nullable=True)
-    disability_identity = Column(String, nullable=True)
+    # Step 4: Topics (comma-separated list)
+    topics = Column(String, nullable=True)  # disability_services, physical_accessibility, housing, etc.
 
+    # Step 5: Category Ratings (stored as JSON string)
+    category_ratings = Column(String, nullable=True)  # JSON: {disability_services: 4, academic_accomodations: 5, ...}
+
+    # Step 6: Optional Reviewer Context (all optional)
+    age_category = Column(String, nullable=True)  # 18-25, 26-35, 36-50, 50+
+    race_ethnicity = Column(String, nullable=True)  # predefined categories
+    race_ethnicity_text = Column(String, nullable=True)  # optional text entry
+    first_generation_student = Column(String, nullable=True)  # yes, no
+    disability_identity = Column(String, nullable=True)  # text entry
+    lgbtq_identity = Column(String, nullable=True)  # text entry
+
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class UniversitySummary(Base):
+    """
+    Stores basic campus overview information from College Scorecard and other sources.
+    One-to-one relationship with College via college_slug.
+    """
+    __tablename__ = "university_summary"
+
+    id = Column(Integer, primary_key=True, index=True)
+    college_slug = Column(String, unique=True, index=True, nullable=False)
+    
+    # Basic info
+    website_url = Column(String, nullable=True)
+    school_type = Column(String, nullable=True)  # e.g., "4-year", "2-year"
+    
+    # Enrollment
+    total_enrollment = Column(Integer, nullable=True)  # Total number of students
+    
+    # Academic info
+    undergrad_enrollment = Column(Integer, nullable=True)  # Undergraduate students
+    
+    # Degrees awarded
+    degrees_awarded = Column(String, nullable=True)  # e.g., "Bachelor's, Master's, Doctorate"
+    
+    # Control/ownership
+    school_ownership = Column(String, nullable=True)  # e.g., "Public", "Private nonprofit", "Private for-profit"
+    
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class UniversityAccessibilityInfo(Base):
+    """
+    Stores accessibility information from CeDaR and other sources.
+    Flexible schema to handle variable data per college.
+    One-to-one relationship with College via college_slug.
+    """
+    __tablename__ = "university_accessibility_info"
+
+    id = Column(Integer, primary_key=True, index=True)
+    college_slug = Column(String, unique=True, index=True, nullable=False)
+    
+    # Disability services contact info
+    dso_phone = Column(String, nullable=True)  # Disability Services Office phone
+    dso_email = Column(String, nullable=True)  # Disability Services Office email
+    dso_url = Column(String, nullable=True)    # Disability Services Office website
+    
+    # On-campus resources
+    has_disability_cultural_center = Column(Integer, default=0)  # 0 or 1
+    has_deaf_culture_center = Column(Integer, default=0)         # 0 or 1
+    has_disability_studies_program = Column(Integer, default=0)  # 0 or 1
+    has_asl_program = Column(Integer, default=0)                 # 0 or 1
+    
+    # Accommodations & services (stored as comma-separated strings)
+    accommodations_provided = Column(String, nullable=True)      # e.g., "Extended test time, Note-taking services, ASL interpreters"
+    
+    # Campus accessibility
+    campus_accessibility_notes = Column(String, nullable=True)   # Free-form text about accessible features
+    
+    # Other resources
+    counseling_services = Column(String, nullable=True)          # e.g., "On-campus counseling available"
+    health_services = Column(String, nullable=True)              # e.g., "On-campus health center"
+    
     created_at = Column(DateTime, server_default=func.now())
 
 

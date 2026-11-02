@@ -6,7 +6,7 @@ Safe to run multiple times (uses get_or_create pattern).
 """
 import uuid
 from database import SessionLocal, engine, Base
-from models import College, Review
+from models import College, Review, UniversityAccessibilityInfo, UniversitySummary
 
 # Import models so Base knows about all tables before create_all
 import models  # noqa: F401
@@ -36,58 +36,114 @@ COLLEGES = [
 ]
 
 
-# Each entry: (college_slug, identities, accommodations, positive, challenges, groups,
-#              campus_safety, peer_inclusivity, institution_inclusivity,
-#              student_language, staff_language, campus_accessibility,
-#              disability_community_access, accommodations_reliability)
+# Accessibility info pulled from CeDaR database
+ACCESSIBILITY_INFO = [
+    {
+        "college_slug": "university-of-washington-seattle-campus-seattle-wa",
+        "dso_phone": "(206) 543-8925",
+        "dso_email": "uwdrs@uw.edu",
+        "dso_url": "https://depts.washington.edu/uwdrs/",
+        "has_disability_cultural_center": 1,
+        "has_deaf_culture_center": 1,
+        "has_disability_studies_program": 1,
+        "has_asl_program": 1,
+        "accommodations_provided": "Extended test time, Note-taking services, ASL interpreters, Accessible housing, Class attendance flexibility, Alternative format materials, Exam proctoring",
+        "campus_accessibility_notes": "Campus has accessible buildings with elevators, ramps, and accessible restrooms. Accessible parking available near major buildings.",
+        "counseling_services": "UW Counseling Center provides mental health services including crisis support",
+        "health_services": "Harborview Medical Center and UW Medical Center on-campus and nearby",
+    },
+    {
+        "college_slug": "washington-state-university-spokane-campus-spokane-wa",
+        "dso_phone": "(509) 358-7865",
+        "dso_email": "drs.spokane@wsu.edu",
+        "dso_url": "https://spokane.wsu.edu/student-services/disability-services/",
+        "has_disability_cultural_center": 0,
+        "has_deaf_culture_center": 0,
+        "has_disability_studies_program": 0,
+        "has_asl_program": 0,
+        "accommodations_provided": "Extended test time, Note-taking services, ASL interpreters available upon request, Accessible housing, Flexible attendance policies",
+        "campus_accessibility_notes": "Modern Spokane campus with accessible facilities. Most buildings meet ADA standards.",
+        "counseling_services": "Counseling and Psychological Services (CAPS) available for students",
+        "health_services": "Student Health Services on campus",
+    },
+]
+
+
+# University summary info from College Scorecard API
+UNIVERSITY_SUMMARY = [
+    {
+        "college_slug": "university-of-washington-seattle-campus-seattle-wa",
+        "website_url": "https://www.washington.edu/",
+        "school_type": "4-year",
+        "total_enrollment": 47000,
+        "undergrad_enrollment": 32000,
+        "degrees_awarded": "Bachelor's, Master's, Doctorate",
+        "school_ownership": "Public",
+    },
+    {
+        "college_slug": "washington-state-university-spokane-campus-spokane-wa",
+        "website_url": "https://spokane.wsu.edu/",
+        "school_type": "4-year",
+        "total_enrollment": 3500,
+        "undergrad_enrollment": 2200,
+        "degrees_awarded": "Bachelor's, Master's",
+        "school_ownership": "Public",
+    },
+]
+
+
+# Each entry: (college_slug, relationship, start_year, end_year, a11y_rating, safety_rating, inclusivity_rating, 
+#              experience_text, topics, category_ratings, age, race, first_gen, disability, lgbtq)
 REVIEWS = [
     # --- UW Seattle ---
     ("university-of-washington-seattle-campus-seattle-wa",
-     ["Wheelchair User", "LGBTQ+"], "I use a wheelchair and received accessible housing near my classes. The DRS office was responsive but the process took several weeks.",
-     "I felt very supported by my peers and found a welcoming community in the DRC student group.",
-     "Some older buildings on campus are not wheelchair accessible, which made navigating to certain classes difficult.",
-     "DRC student group, ASUW Disability Awareness group",
-     4, 5, 4, 4, 5, 3, 4, 4),
+     "current_student", 2022, 2026,
+     4, 4, 5,
+     "UW has been welcoming overall. The Disability Resources for Students office is helpful, though response times can be slow. Accessibility varies by building - some newer facilities are great, older ones have challenges.",
+     "disability_services,physical_accessibility,academic_accomodations",
+     '{"disability_services": 4, "academic_accomodations": 4, "physical_accessibility": 3, "accessible_housing": 4}',
+     "18-25", "Asian", "no", "Deaf", ""),
 
     ("university-of-washington-seattle-campus-seattle-wa",
-     ["Chronic Health Condition"], "I receive extended test time and note-taking assistance. The accommodations have been reliable once approved.",
-     "The faculty has been very understanding and willing to work with me on flexible deadlines.",
-     "Getting accommodations initially set up required a lot of self-advocacy and paperwork.",
-     "Disability Studies class, Chronic Illness Support Group",
-     5, 4, 4, 5, 4, 4, 3, 5),
+     "alumni", 2018, 2022,
+     3, 5, 4,
+     "My time at UW was positive. Campus is generally safe and inclusive. Housing accommodations for disabled students are available but limited. Professors were understanding about extensions.",
+     "academic_accomodations,campus_culture,housing",
+     '{"transportation": 5, "digital_accessibility": 4, "lgbtq_inclusion": 5, "campus_diversity": 4}',
+     "26-35", "Hispanic/Latino", "yes", "ADHD", ""),
 
     ("university-of-washington-seattle-campus-seattle-wa",
-     ["Mental Health Condition", "POC"],
-     "I use mental health accommodations including flexible attendance. The counseling center has been helpful.",
-     "I found a strong community through the ECC (Ethnic Cultural Center) and counseling services.",
-     "The wait times for counseling appointments can be long, sometimes several weeks.",
-     "ECC, Black Student Union, NAMI on Campus",
-     3, 4, 5, 3, 4, 5, 3, 3),
+     "current_student", 2023, 2027,
+     4, 4, 4,
+     "Good experience so far. LGBTQ+ community is strong here. Accessibility services are decent but sometimes bureaucratic. Would recommend.",
+     "lgbtq_inclusion,safety,campus_culture",
+     '{"racial_cultural_inclusion": 5, "religious_tolerance": 4, "peer_support": 5, "liberal_climate": 5}',
+     "18-25", "White", "no", "", "She/her, Bisexual"),
 
     # --- WSU Spokane ---
     ("washington-state-university-spokane-campus-spokane-wa",
-     ["Mental Health Condition"],
-     "I receive accommodations for anxiety including flexible deadlines and a quiet space for exams.",
-     "The health sciences campus is very supportive and the class sizes are small enough that faculty know you personally.",
-     "Limited mental health resources on the Spokane campus compared to Pullman.",
-     "Wellness group, pharmacy student support network",
-     5, 5, 5, 4, 5, 5, 3, 4),
+     "current_student", 2021, 2025,
+     5, 5, 5,
+     "Spokane campus is smaller and more tight-knit. Disability services are responsive and helpful. Campus is very accessible. Great experience overall.",
+     "disability_services,physical_accessibility",
+     '{"disability_services": 5, "physical_accessibility": 5, "accessible_housing": 4, "digital_accessibility": 5}',
+     "18-25", "Indigenous", "yes", "Mobility disability", ""),
 
     ("washington-state-university-spokane-campus-spokane-wa",
-     ["Hearing Impairment"],
-     "I use ASL interpreters and captioning services. The DRS office coordinated everything well.",
-     "The campus is modern and accessible, and faculty have been responsive to my needs.",
-     "Finding ASL interpreters for certain specialized courses was sometimes challenging.",
-     "Deaf community meetups, ASL Club",
-     4, 4, 4, 5, 5, 5, 4, 4),
+     "former_student", 2019, 2023,
+     4, 5, 5,
+     "Campus was welcoming. Good transportation options. Housing was comfortable. Overall positive experience.",
+     "transportation,housing,campus_culture",
+     '{"transportation": 4, "accessible_housing": 4, "campus_diversity": 5, "lgbtq_inclusion": 4}',
+     "26-35", "Black/African American", "yes", "", "He/him, Gay"),
 
     ("washington-state-university-spokane-campus-spokane-wa",
-     ["Learning Disability", "ADHD"],
-     "I receive extended test time and a quiet testing environment. The Disability Support Services office is easy to reach.",
-     "The smaller campus size made it easier to connect with faculty and get to know my classmates.",
-     "There are fewer disability-specific student groups compared to larger campuses.",
-     "DSS peer mentoring, study skills workshops",
-     4, 4, 5, 4, 5, 4, 3, 5),
+     "staff", 2020, None,
+     4, 4, 4,
+     "Working here, I see the institution taking accessibility seriously. Good commitment to inclusion. Could use more LGBTQ+ specific resources.",
+     "lgbtq_inclusion,safety,academic_accomodations",
+     '{"racial_cultural_inclusion": 4, "religious_tolerance": 3, "peer_support": 4, "liberal_climate": 3}',
+     None, None, None, "Neurotypical", "She/her, Asexual"),
 ]
 
 
@@ -103,29 +159,28 @@ def get_or_create_college(db, college_data):
 
 def create_review(db, slug, data):
     (
-        identities, accommodations, positive, challenges, groups,
-        campus_safety, peer_inclusivity, institution_inclusivity,
-        student_language, staff_language, campus_accessibility,
-        disability_community_access, accommodations_reliability
+        relationship, start_year, end_year, a11y_rating, safety_rating, inclusivity_rating,
+        experience_text, topics, category_ratings, age, race, first_gen, disability, lgbtq
     ) = data
 
     review = Review(
         id=str(uuid.uuid4()),
         college_slug=slug,
         review_date="2025-01-15",
-        identities=",".join(identities) if identities else None,
-        share_accommodations_text=accommodations,
-        share_positive_text=positive,
-        share_challenges_text=challenges,
-        share_groups_text=groups,
-        campus_safety=campus_safety,
-        peer_inclusivity=peer_inclusivity,
-        institution_inclusivity=institution_inclusivity,
-        student_language=student_language,
-        staff_language=staff_language,
-        campus_accessibility=campus_accessibility,
-        disability_community_access=disability_community_access,
-        accommodations_reliability=accommodations_reliability,
+        relationship_to_university=relationship,
+        attendance_start_year=start_year,
+        attendance_end_year=end_year,
+        accessibility_rating=a11y_rating,
+        safety_rating=safety_rating,
+        inclusivity_rating=inclusivity_rating,
+        experience_text=experience_text,
+        topics=topics,
+        category_ratings=category_ratings,
+        age_category=age,
+        race_ethnicity=race,
+        first_generation_student=first_gen,
+        disability_identity=disability,
+        lgbtq_identity=lgbtq,
     )
     db.add(review)
     return review
@@ -137,30 +192,23 @@ def update_college_ratings(db, slug):
     if not reviews:
         return
 
-    def avg(field):
-        vals = [getattr(r, field) for r in reviews if getattr(r, field) is not None]
-        return round(sum(vals) / len(vals), 2) if vals else None
+    def avg(vals):
+        nums = [v for v in vals if v is not None]
+        return round(sum(nums) / len(nums), 2) if nums else None
 
     college = db.query(College).filter(College.slug == slug).first()
     if college:
-        # Accessibility = average of campus_accessibility, accommodations_reliability, disability_community_access
-        a11y_vals = [r.campus_accessibility for r in reviews if r.campus_accessibility]
-        acc_vals = [r.accommodations_reliability for r in reviews if r.accommodations_reliability]
-        dcc_vals = [r.disability_community_access for r in reviews if r.disability_community_access]
-        all_a11y = a11y_vals + acc_vals + dcc_vals
-        college.a11y_overall = round(sum(all_a11y) / len(all_a11y), 2) if all_a11y else None
+        # Accessibility rating
+        a11y_vals = [r.accessibility_rating for r in reviews if r.accessibility_rating is not None]
+        college.a11y_overall = avg(a11y_vals)
 
-        # Safety = average of campus_safety
-        safety_vals = [r.campus_safety for r in reviews if r.campus_safety]
-        college.safety_overall = round(sum(safety_vals) / len(safety_vals), 2) if safety_vals else None
+        # Safety rating
+        safety_vals = [r.safety_rating for r in reviews if r.safety_rating is not None]
+        college.safety_overall = avg(safety_vals)
 
-        # Inclusivity = average of peer_inclusivity, institution_inclusivity, student_language, staff_language
-        incl_vals = [r.peer_inclusivity for r in reviews if r.peer_inclusivity]
-        inst_vals = [r.institution_inclusivity for r in reviews if r.institution_inclusivity]
-        stud_vals = [r.student_language for r in reviews if r.student_language]
-        staff_vals = [r.staff_language for r in reviews if r.staff_language]
-        all_incl = incl_vals + inst_vals + stud_vals + staff_vals
-        college.inclusivity_overall = round(sum(all_incl) / len(all_incl), 2) if all_incl else None
+        # Inclusivity rating
+        incl_vals = [r.inclusivity_rating for r in reviews if r.inclusivity_rating is not None]
+        college.inclusivity_overall = avg(incl_vals)
 
 
 def run_seed():
@@ -170,6 +218,26 @@ def run_seed():
     # Seed colleges
     for c in COLLEGES:
         get_or_create_college(db, c)
+
+    # Seed accessibility info
+    for info in ACCESSIBILITY_INFO:
+        existing = db.query(UniversityAccessibilityInfo).filter(
+            UniversityAccessibilityInfo.college_slug == info["college_slug"]
+        ).first()
+        if not existing:
+            accessibility_info = UniversityAccessibilityInfo(**info)
+            db.add(accessibility_info)
+
+    # Seed university summary info
+    for summary in UNIVERSITY_SUMMARY:
+        existing = db.query(UniversitySummary).filter(
+            UniversitySummary.college_slug == summary["college_slug"]
+        ).first()
+        if not existing:
+            univ_summary = UniversitySummary(**summary)
+            db.add(univ_summary)
+
+    db.commit()
 
     # Seed reviews
     for slug, *data in REVIEWS:
@@ -184,6 +252,8 @@ def run_seed():
     db.close()
     print("Database seeded successfully!")
     print(f"  - {len(COLLEGES)} colleges")
+    print(f"  - {len(ACCESSIBILITY_INFO)} accessibility info entries")
+    print(f"  - {len(UNIVERSITY_SUMMARY)} university summary entries")
     print(f"  - {len(REVIEWS)} reviews")
 
 
