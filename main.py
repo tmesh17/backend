@@ -17,7 +17,7 @@ import uuid
 from typing import Optional
 from fastapi import FastAPI, Depends, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import func
 from dotenv import load_dotenv
 
@@ -257,6 +257,10 @@ def search_colleges(q: str, db: Session = Depends(get_db)):
     query_filter = f"%{q}%"
     colleges = (
         db.query(College)
+        .options(
+            selectinload(College.university_summary),
+            selectinload(College.accessibility_info)
+        )
         .filter(
             (College.name.ilike(query_filter))
             | (College.city.ilike(query_filter))
@@ -274,10 +278,14 @@ def filter_colleges(
     has_disability_cultural_center: Optional[bool] = None,
     min_safety: Optional[float] = None,
     min_inclusivity: Optional[float] = None,
+    has_data: Optional[bool] = None,
     db: Session = Depends(get_db),
 ):
     """Filter and sort colleges based on criteria. Returns array of College objects."""
-    query = db.query(College)
+    query = db.query(College).options(
+        selectinload(College.university_summary),
+        selectinload(College.accessibility_info)
+    )
 
     if state:
         query = query.filter(College.state == state)
@@ -287,6 +295,13 @@ def filter_colleges(
         query = query.filter(College.safety_overall >= min_safety)
     if min_inclusivity is not None:
         query = query.filter(College.inclusivity_overall >= min_inclusivity)
+    
+    # Filter to only colleges with accessibility data (used for "Explore" page)
+    if has_data:
+        query = query.join(
+            UniversityAccessibilityInfo,
+            College.slug == UniversityAccessibilityInfo.college_slug
+        ).distinct()
 
     colleges = query.all()
 
@@ -307,14 +322,30 @@ def compare_colleges(slugs: str, db: Session = Depends(get_db)):
     Usage: /v0/colleges/compare?slugs=slug1,slug2,slug3
     """
     slug_list = [s.strip() for s in slugs.split(",") if s.strip()]
-    colleges = db.query(College).filter(College.slug.in_(slug_list)).all()
+    colleges = (
+        db.query(College)
+        .options(
+            selectinload(College.university_summary),
+            selectinload(College.accessibility_info)
+        )
+        .filter(College.slug.in_(slug_list))
+        .all()
+    )
     return [college_to_dict(c, db) for c in colleges]
 
 
 @app.get("/v0/colleges/{slug}")
 def get_college(slug: str, db: Session = Depends(get_db)):
     """Get a single college by slug. Returns College object with ratings and review count."""
-    college = db.query(College).filter(College.slug == slug).first()
+    college = (
+        db.query(College)
+        .options(
+            selectinload(College.university_summary),
+            selectinload(College.accessibility_info)
+        )
+        .filter(College.slug == slug)
+        .first()
+    )
     if not college:
         raise HTTPException(status_code=404, detail=f"College not found: {slug}")
     return college_to_dict(college, db)

@@ -1,16 +1,33 @@
 """
-Seed script: populates the database with UW and WSU colleges plus sample reviews.
+Seed script: populates the database with UW and WSU colleges plus sample reviews,
+then fetches additional colleges from College Scorecard API.
+
+Features:
+- Keeps 2 test colleges (UW Seattle, WSU Spokane) with full sample data + reviews
+- Fetches ~7,000 colleges from College Scorecard API
+- Matches with CeDaR accessibility data (where available)
+- Uses get_or_create pattern to safely run multiple times
 
 Run with: python seed.py
-Safe to run multiple times (uses get_or_create pattern).
+Requires: SCORECARD_API_KEY environment variable (get from https://api.data.gov)
+
+Safe to run multiple times (existing colleges and reviews preserved).
 """
 import uuid
+import requests
+import os
+import json
+from typing import Optional, Dict, List
 from database import SessionLocal, engine, Base
 from models import College, Review, UniversityAccessibilityInfo, UniversitySummary
 
 # Import models so Base knows about all tables before create_all
 import models  # noqa: F401
 
+
+# ============================================================================
+# HARDCODED TEST COLLEGES (kept with full data)
+# ============================================================================
 
 COLLEGES = [
     {
@@ -147,8 +164,145 @@ REVIEWS = [
 ]
 
 
-def get_or_create_college(db, college_data):
-    college = db.query(College).filter(College.slug == college_data["slug"]).first()
+# ============================================================================
+# COLLEGE SCORECARD API FUNCTIONS
+# ============================================================================
+
+def _decode_ownership(ownership_code: Optional[int]) -> Optional[str]:
+    """Decode school ownership from code."""
+    ownership = {1: "Public", 2: "Private nonprofit", 3: "Private for-profit"}
+    return ownership.get(ownership_code)
+
+
+def fetch_colleges_from_scorecard(api_key: str, limit: Optional[int] = None) -> List[Dict]:
+    """
+    Fetch college data from College Scorecard API.
+    
+    Fetches: name, city, state, school_type, control (ownership), total_enrollment,
+             undergrad_enrollment, degrees_awarded, website_url
+    
+    Args:
+        api_key: API key from https://api.data.gov
+        limit: Max colleges to fetch (None = all ~7,000)
+    
+    Returns:
+        List of college dicts
+    """
+    BASE_URL = "https://api.data.gov/ed/collegescorecard/v1/schools"
+    
+    colleges = []
+    page = 0
+    per_page = 100
+    
+    print(f"Fetching colleges from College Scorecard API...")
+    
+    while True:
+        # College Scorecard fields we want (simplified)
+        # Use dot notation to access nested fields
+        fields = [
+            "id",
+            "school.name",
+            "school.city",
+            "school.state",
+            "school.school_url",
+            "school.ownership",  # 1=Public, 2=Private nonprofit, 3=Private for-profit
+            "latest.student.size",  # Total enrollment
+        ]
+        
+        params = {
+            "api_key": api_key,
+            "per_page": per_page,
+        }
+        
+        # Only add select if fields are specified
+        if fields:
+            params["_fields"] = ",".join(fields)
+        
+        # Pagination
+        params["page"] = page
+        
+        try:
+            response = requests.get(BASE_URL, params=params, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+        except requests.RequestException as e:
+            print(f"  Error fetching page {page}: {e}")
+            break
+        
+        if "results" not in data or not data["results"]:
+            break
+        
+        for result in data["results"]:
+            try:
+                # API returns flat structure with dot notation keys
+                college = {
+                    "id": result.get("id"),
+                    "name": result.get("school.name"),
+                    "city": result.get("school.city"),
+                    "state": result.get("school.state"),
+                    "website_url": result.get("school.school_url"),
+                    "school_type": "4-year",  # Default
+                    "school_ownership": _decode_ownership(result.get("school.ownership")),
+                    "total_enrollment": result.get("latest.student.size"),
+                    "undergrad_enrollment": None,
+                    "degrees_awarded": None,
+                }
+                
+                # Only add if has required fields
+                if college["id"] and college["name"] and college["state"]:
+                    colleges.append(college)
+            except Exception as e:
+                continue
+        
+        print(f"  Loaded {len(colleges)} colleges (page {page + 1})...")
+        
+        if limit and len(colleges) >= limit:
+            colleges = colleges[:limit]
+            break
+        
+        page += 1
+    
+    print(f"Total colleges fetched: {len(colleges)}")
+    return colleges
+
+
+# ============================================================================
+# CEDAR DATABASE INTEGRATION (PLACEHOLDER)
+# ============================================================================
+
+def match_with_cedar_data(college: Dict) -> Optional[Dict]:
+    """
+    Match college with CeDaR accessibility data.
+    
+    TODO: Integrate with actual CeDaR database
+    For now, returns None (no accessibility data available)
+    
+    CeDaR provides:
+    - DSO contact info (phone, email, URL)
+    - Disability cultural center status
+    - Deaf culture center status
+    - On-campus accommodations
+    - Campus accessibility notes
+    
+    Args:
+        college: College dict from College Scorecard
+    
+    Returns:
+        Accessibility info dict or None if not found
+    """
+    # Placeholder: would call CeDaR API or database here
+    # For now, only test colleges have accessibility data
+    return None
+
+
+# ============================================================================
+# DATABASE FUNCTIONS
+# ============================================================================
+
+def get_or_create_college(db, college_data: Dict):
+    """Get existing college or create new one."""
+    slug = college_data.get("slug")
+    college = db.query(College).filter(College.slug == slug).first()
     if college:
         return college
     college = College(**college_data)
@@ -157,7 +311,56 @@ def get_or_create_college(db, college_data):
     return college
 
 
-def create_review(db, slug, data):
+def create_college_from_scorecard(db, scorecard_college: Dict) -> College:
+    """
+    Create college object from Scorecard data.
+    
+    Generates a slug from name, city, state.
+    """
+    # Generate slug: lowercase, replace spaces with hyphens
+    name = scorecard_college.get("name", "")
+    city = scorecard_college.get("city", "")
+    state = scorecard_college.get("state", "")
+    slug = f"{name}-{city}-{state}".lower().replace(" ", "-").replace("--", "-")
+    
+    college_data = {
+        "id": scorecard_college.get("id"),
+        "slug": slug,
+        "name": name,
+        "city": city,
+        "state": state,
+        "university_type": None,  # Not in Scorecard
+        "brand_color": None,       # Will be generated client-side
+        "has_disability_cultural_center": 0,  # Default: unknown
+    }
+    
+    return get_or_create_college(db, college_data)
+
+
+def create_summary_from_scorecard(db, scorecard_college: Dict, college_slug: str):
+    """Create UniversitySummary from Scorecard data."""
+    existing = db.query(UniversitySummary).filter(
+        UniversitySummary.college_slug == college_slug
+    ).first()
+    
+    if existing:
+        return
+    
+    summary = UniversitySummary(
+        college_slug=college_slug,
+        website_url=scorecard_college.get("website_url"),
+        school_type=scorecard_college.get("school_type"),
+        total_enrollment=scorecard_college.get("total_enrollment"),
+        undergrad_enrollment=scorecard_college.get("undergrad_enrollment"),
+        degrees_awarded=scorecard_college.get("degrees_awarded"),
+        school_ownership=scorecard_college.get("school_ownership"),
+    )
+    db.add(summary)
+    db.commit()
+
+
+def create_review(db, slug: str, data):
+    """Create a review from tuple data."""
     (
         relationship, start_year, end_year, a11y_rating, safety_rating, inclusivity_rating,
         experience_text, topics, category_ratings, age, race, first_gen, disability, lgbtq
@@ -186,7 +389,7 @@ def create_review(db, slug, data):
     return review
 
 
-def update_college_ratings(db, slug):
+def update_college_ratings(db, slug: str):
     """Compute and store aggregate ratings from all reviews for a college."""
     reviews = db.query(Review).filter(Review.college_slug == slug).all()
     if not reviews:
@@ -198,26 +401,37 @@ def update_college_ratings(db, slug):
 
     college = db.query(College).filter(College.slug == slug).first()
     if college:
-        # Accessibility rating
         a11y_vals = [r.accessibility_rating for r in reviews if r.accessibility_rating is not None]
         college.a11y_overall = avg(a11y_vals)
 
-        # Safety rating
         safety_vals = [r.safety_rating for r in reviews if r.safety_rating is not None]
         college.safety_overall = avg(safety_vals)
 
-        # Inclusivity rating
         incl_vals = [r.inclusivity_rating for r in reviews if r.inclusivity_rating is not None]
         college.inclusivity_overall = avg(incl_vals)
 
 
+# ============================================================================
+# MAIN SEED FUNCTION
+# ============================================================================
+
 def run_seed():
+    """Main seed function."""
+    print("=" * 70)
+    print("COLLEGE SCORE DATABASE SEED")
+    print("=" * 70)
+    
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
 
-    # Seed colleges
+    # ========================================================================
+    # PHASE 1: Seed hardcoded test colleges with full data
+    # ========================================================================
+    print("\n[PHASE 1] Seeding test colleges (UW Seattle, WSU Spokane)...")
+    
     for c in COLLEGES:
         get_or_create_college(db, c)
+    print(f"  ✓ {len(COLLEGES)} test colleges created/verified")
 
     # Seed accessibility info
     for info in ACCESSIBILITY_INFO:
@@ -227,6 +441,8 @@ def run_seed():
         if not existing:
             accessibility_info = UniversityAccessibilityInfo(**info)
             db.add(accessibility_info)
+    db.commit()
+    print(f"  ✓ {len(ACCESSIBILITY_INFO)} accessibility info entries created")
 
     # Seed university summary info
     for summary in UNIVERSITY_SUMMARY:
@@ -236,25 +452,99 @@ def run_seed():
         if not existing:
             univ_summary = UniversitySummary(**summary)
             db.add(univ_summary)
-
     db.commit()
+    print(f"  ✓ {len(UNIVERSITY_SUMMARY)} university summary entries created")
 
-    # Seed reviews
+    # Seed reviews for test colleges
     for slug, *data in REVIEWS:
         create_review(db, slug, data)
-
     db.commit()
+    print(f"  ✓ {len(REVIEWS)} reviews created for test colleges")
 
-    # Update aggregate ratings (after commit so reviews are persisted)
+    # Update ratings
     for c in COLLEGES:
         update_college_ratings(db, c["slug"])
-    db.commit()  # Commit the rating updates
-    db.close()
-    print("Database seeded successfully!")
-    print(f"  - {len(COLLEGES)} colleges")
-    print(f"  - {len(ACCESSIBILITY_INFO)} accessibility info entries")
-    print(f"  - {len(UNIVERSITY_SUMMARY)} university summary entries")
-    print(f"  - {len(REVIEWS)} reviews")
+    db.commit()
+    print(f"  ✓ Aggregate ratings calculated")
+
+    # ========================================================================
+    # PHASE 2: Fetch and seed colleges from College Scorecard API
+    # ========================================================================
+    print("\n[PHASE 2] Fetching colleges from College Scorecard API...")
+    
+    api_key = os.getenv("SCORECARD_API_KEY")
+    if not api_key:
+        print("  ⚠ SCORECARD_API_KEY not set. Skipping College Scorecard import.")
+        print("  To enable: set SCORECARD_API_KEY in .env (get from https://api.data.gov)")
+    else:
+        try:
+            # Fetch from Scorecard (None = all ~6,272 colleges)
+            scorecard_colleges = fetch_colleges_from_scorecard(api_key, limit=None)
+            
+            print(f"\n[PHASE 2B] Processing {len(scorecard_colleges)} colleges from Scorecard...")
+            
+            colleges_created = 0
+            for scorecard_college in scorecard_colleges:
+                try:
+                    # Skip if we already have this college (by ID)
+                    existing = db.query(College).filter(
+                        College.id == scorecard_college.get("id")
+                    ).first()
+                    if existing:
+                        continue
+                    
+                    # Create college
+                    college = create_college_from_scorecard(db, scorecard_college)
+                    
+                    # Create university summary
+                    create_summary_from_scorecard(db, scorecard_college, college.slug)
+                    
+                    # Match with CeDaR data (if available)
+                    cedar_data = match_with_cedar_data(scorecard_college)
+                    if cedar_data:
+                        existing_a11y = db.query(UniversityAccessibilityInfo).filter(
+                            UniversityAccessibilityInfo.college_slug == college.slug
+                        ).first()
+                        if not existing_a11y:
+                            a11y_info = UniversityAccessibilityInfo(
+                                college_slug=college.slug,
+                                **cedar_data
+                            )
+                            db.add(a11y_info)
+                    
+                    colleges_created += 1
+                    
+                except Exception as e:
+                    print(f"    Error processing college: {e}")
+                    continue
+            
+            db.commit()
+            print(f"  ✓ {colleges_created} colleges from Scorecard imported")
+        
+        except Exception as e:
+            print(f"  ✗ Error fetching from Scorecard: {e}")
+    
+    # ========================================================================
+    # SUMMARY
+    # ========================================================================
+    
+    print("\n" + "=" * 70)
+    print("SEED COMPLETE")
+    print("=" * 70)
+    
+    db_session = SessionLocal()
+    total_colleges = db_session.query(College).count()
+    total_reviews = db_session.query(Review).count()
+    db_session.close()
+    
+    print(f"✓ Total colleges in database: {total_colleges}")
+    print(f"✓ Total reviews in database: {total_reviews}")
+    print(f"✓ Test colleges: {len(COLLEGES)}")
+    print(f"✓ Test reviews: {len(REVIEWS)}")
+    print(f"✓ Accessibility info entries: {len(ACCESSIBILITY_INFO)}")
+    print(f"✓ University summaries: {len(UNIVERSITY_SUMMARY)}")
+    print("\nTo view API docs: http://localhost:8000/docs")
+    print("To search colleges: http://localhost:3000")
 
 
 if __name__ == "__main__":

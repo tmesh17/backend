@@ -25,7 +25,12 @@ Copy `.env.example` to `.env`:
 cp .env.example .env
 ```
 
-The backend will use Supabase for data storage. Ensure your `.env` file contains valid Supabase credentials.
+**Required** — Supabase credentials:
+- `SUPABASE_URL` — Your Supabase project URL
+- `SUPABASE_SECRET_KEY` — Your Supabase secret key
+
+**Optional** — College Scorecard API (for importing 6,000+ US colleges):
+- `SCORECARD_API_KEY` — Get free key from [api.data.gov/signup](https://api.data.gov/signup/)
 
 ### 3. Run the Server
 
@@ -60,14 +65,31 @@ The frontend will be available at `http://localhost:3001`.
 
 ## Database Seeding
 
-To seed sample data to your Supabase instance:
+To seed sample data (test colleges + 6,000+ US colleges from College Scorecard API):
 
 ```bash
 source venv/bin/activate
-python scripts/seed_supabase.py
+python seed.py
 ```
 
-This creates sample colleges (UW + WSU campuses) with reviews.
+This will:
+- Create 2 test colleges (UW Seattle, WSU Spokane) with sample reviews
+- Fetch ~6,000 US colleges from the College Scorecard API
+- Insert all colleges into the database
+
+**To enable College Scorecard import:**
+
+1. Get a free API key from [api.data.gov/signup](https://api.data.gov/signup/)
+2. Add to `.env`:
+   ```
+   SCORECARD_API_KEY=your-key-here
+   ```
+3. Re-run `python seed.py`
+
+The seed script will:
+- Always import test colleges with full data
+- Skip if `SCORECARD_API_KEY` is not set
+- Safely handle re-runs (won't duplicate existing colleges)
 
 ## API Endpoints
 
@@ -78,26 +100,27 @@ This creates sample colleges (UW + WSU campuses) with reviews.
 - `POST /v0/reviews` — Submit a review
 - `POST /v0/emails` — Subscribe to updates
 
-## Supabase Configuration
+## Configuration
+
+### Supabase Setup
 
 The backend uses Supabase for data storage. Required environment variables in `.env`:
 
 ```
 SUPABASE_URL=your_supabase_url
-SUPABASE_KEY=your_supabase_anon_key
-SUPABASE_JWT_SECRET=your_jwt_secret
+SUPABASE_SECRET_KEY=your_supabase_secret_key
+SUPABASE_DISCOVERY_URL=your_supabase_discovery_url
 ```
 
-To set up Supabase:
+Tables are created automatically when you run `python seed.py`.
 
-1. Create a project at https://supabase.com
-2. Create the required tables:
-   - `colleges` — College information
-   - `accessibility_info` — Accessibility details
-   - `university_summary` — University overview
-   - `reviews` — User reviews
-3. Copy your project URL, anon key, and JWT secret to `.env`
-4. Run `python scripts/seed_supabase.py` to populate sample data
+### College Scorecard API (Optional)
+
+To import all ~6,000 US colleges:
+
+1. Get a free API key: [api.data.gov/signup](https://api.data.gov/signup/)
+2. Add to `.env`: `SCORECARD_API_KEY=your-key`
+3. Run: `python seed.py`
 
 
 ## Troubleshooting

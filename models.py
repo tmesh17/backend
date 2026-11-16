@@ -1,7 +1,8 @@
 """
 SQLAlchemy ORM models for College, Review, and EmailSubscription.
 """
-from sqlalchemy import Column, Integer, String, Float, DateTime, func
+from sqlalchemy import Column, Integer, String, Float, DateTime, func, ForeignKey
+from sqlalchemy.orm import relationship
 from database import Base
 
 
@@ -21,13 +22,18 @@ class College(Base):
     inclusivity_overall = Column(Float, nullable=True)
     # Whether the college has a disability cultural center
     has_disability_cultural_center = Column(Integer, default=0)  # 0 or 1 (bool)
+    
+    # Relationships
+    university_summary = relationship("UniversitySummary", back_populates="college", uselist=False)
+    accessibility_info = relationship("UniversityAccessibilityInfo", back_populates="college", uselist=False)
+    reviews = relationship("Review", back_populates="college")
 
 
 class Review(Base):
     __tablename__ = "reviews"
 
     id = Column(String, primary_key=True, index=True)  # UUID
-    college_slug = Column(String, index=True, nullable=False)
+    college_slug = Column(String, ForeignKey("colleges.slug"), index=True, nullable=False)
     review_date = Column(String, nullable=False)  # ISO date string
 
     # Step 1: University and Role
@@ -58,6 +64,9 @@ class Review(Base):
     lgbtq_identity = Column(String, nullable=True)  # text entry
 
     created_at = Column(DateTime, server_default=func.now())
+    
+    # Relationship
+    college = relationship("College", back_populates="reviews")
 
 
 class UniversitySummary(Base):
@@ -68,7 +77,7 @@ class UniversitySummary(Base):
     __tablename__ = "university_summary"
 
     id = Column(Integer, primary_key=True, index=True)
-    college_slug = Column(String, unique=True, index=True, nullable=False)
+    college_slug = Column(String, ForeignKey("colleges.slug"), unique=True, index=True, nullable=False)
     
     # Basic info
     website_url = Column(String, nullable=True)
@@ -87,6 +96,9 @@ class UniversitySummary(Base):
     school_ownership = Column(String, nullable=True)  # e.g., "Public", "Private nonprofit", "Private for-profit"
     
     created_at = Column(DateTime, server_default=func.now())
+    
+    # Relationship
+    college = relationship("College", back_populates="university_summary")
 
 
 class UniversityAccessibilityInfo(Base):
@@ -98,7 +110,7 @@ class UniversityAccessibilityInfo(Base):
     __tablename__ = "university_accessibility_info"
 
     id = Column(Integer, primary_key=True, index=True)
-    college_slug = Column(String, unique=True, index=True, nullable=False)
+    college_slug = Column(String, ForeignKey("colleges.slug"), unique=True, index=True, nullable=False)
     
     # Disability services contact info
     dso_phone = Column(String, nullable=True)  # Disability Services Office phone
@@ -122,6 +134,9 @@ class UniversityAccessibilityInfo(Base):
     health_services = Column(String, nullable=True)              # e.g., "On-campus health center"
     
     created_at = Column(DateTime, server_default=func.now())
+    
+    # Relationship
+    college = relationship("College", back_populates="accessibility_info")
 
 
 class EmailSubscription(Base):
