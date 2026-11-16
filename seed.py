@@ -23,6 +23,7 @@ from models import College, Review, UniversityAccessibilityInfo, UniversitySumma
 
 # Import models so Base knows about all tables before create_all
 import models  # noqa: F401
+from integrations import ENRICH_TEST_COLLEGES
 
 
 # ============================================================================
@@ -39,6 +40,8 @@ COLLEGES = [
         "university_type": "Public Research University",
         "brand_color": "#4B0082",  # UW Purple
         "has_disability_cultural_center": 1,
+        "ipeds_unitid": "236948",  # IPEDS UnitID from College Scorecard
+        "county_fips": "53033",     # King County, WA
     },
     {
         "id": 236940,
@@ -49,6 +52,8 @@ COLLEGES = [
         "university_type": "Public Research University",
         "brand_color": "#981E32",  # WSU Crimson
         "has_disability_cultural_center": 0,
+        "ipeds_unitid": "236940",  # IPEDS UnitID from College Scorecard
+        "county_fips": "53063",     # Spokane County, WA
     },
 ]
 
@@ -316,12 +321,16 @@ def create_college_from_scorecard(db, scorecard_college: Dict) -> College:
     Create college object from Scorecard data.
     
     Generates a slug from name, city, state.
+    Extracts IPEDS UnitID from API response.
     """
     # Generate slug: lowercase, replace spaces with hyphens
     name = scorecard_college.get("name", "")
     city = scorecard_college.get("city", "")
     state = scorecard_college.get("state", "")
     slug = f"{name}-{city}-{state}".lower().replace(" ", "-").replace("--", "-")
+    
+    # IPEDS UnitID is the 'id' field from College Scorecard API
+    ipeds_unitid = str(scorecard_college.get("id")) if scorecard_college.get("id") else None
     
     college_data = {
         "id": scorecard_college.get("id"),
@@ -332,6 +341,8 @@ def create_college_from_scorecard(db, scorecard_college: Dict) -> College:
         "university_type": None,  # Not in Scorecard
         "brand_color": None,       # Will be generated client-side
         "has_disability_cultural_center": 0,  # Default: unknown
+        "ipeds_unitid": ipeds_unitid,  # 6-digit IPEDS UnitID
+        "county_fips": None,  # Will be populated from Census Geocoder if available
     }
     
     return get_or_create_college(db, college_data)
@@ -440,6 +451,24 @@ def run_seed():
         ).first()
         if not existing:
             accessibility_info = UniversityAccessibilityInfo(**info)
+            
+            # Fetch real city overview data
+            college_data = None
+            for college in COLLEGES:
+                if college["slug"] == info["college_slug"]:
+                    college_data = college
+                    break
+            
+            if college_data:
+                try:
+                    from integrations import build_city_overview
+                    city_overview = build_city_overview(college_data)
+                    if city_overview:
+                        accessibility_info.city_overview = json.dumps(city_overview)
+                        print(f"  ✓ Fetched real city overview data for {college_data['city']}, {college_data['state']}")
+                except Exception as e:
+                    print(f"  ⚠ Could not fetch real city data for {college_data['city']}: {e}")
+            
             db.add(accessibility_info)
     db.commit()
     print(f"  ✓ {len(ACCESSIBILITY_INFO)} accessibility info entries created")
@@ -451,6 +480,25 @@ def run_seed():
         ).first()
         if not existing:
             univ_summary = UniversitySummary(**summary)
+            
+            # Fetch real student demographics from College Scorecard API
+            college_name = None
+            for college in COLLEGES:
+                if college["slug"] == summary["college_slug"]:
+                    college_name = college["name"]
+                    break
+            
+            if college_name:
+                try:
+                    from integrations import fetch_college_student_demographics
+                    demographics = fetch_college_student_demographics(college_name)
+                    if demographics:
+                        demographics.pop("source", None)  # Remove source before storing
+                        univ_summary.student_demographics = json.dumps(demographics)
+                        print(f"  ✓ Fetched real student demographics for {college_name}")
+                except Exception as e:
+                    print(f"  ⚠ Could not fetch real demographics for {college_name}: {e}")
+            
             db.add(univ_summary)
     db.commit()
     print(f"  ✓ {len(UNIVERSITY_SUMMARY)} university summary entries created")

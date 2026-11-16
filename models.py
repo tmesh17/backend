@@ -16,6 +16,11 @@ class College(Base):
     state = Column(String, nullable=False)
     university_type = Column(String, nullable=True)  # e.g., "Public Research University"
     brand_color = Column(String, nullable=True)  # Hex color for university branding (e.g., "#4B0082" for UW purple)
+    
+    # Data integration identifiers for linking external data sources
+    ipeds_unitid = Column(String, nullable=True, index=True)  # 6-digit IPEDS UnitID from NCES (e.g., "236539" for UW)
+    county_fips = Column(String, nullable=True, index=True)  # 5-digit county FIPS code for Census/EPA/HRSA linkage
+    
     # Aggregated rating fields (computed from reviews, stored for quick lookup)
     a11y_overall = Column(Float, nullable=True)
     safety_overall = Column(Float, nullable=True)
@@ -95,6 +100,15 @@ class UniversitySummary(Base):
     # Control/ownership
     school_ownership = Column(String, nullable=True)  # e.g., "Public", "Private nonprofit", "Private for-profit"
     
+    # Student demographics (stored as JSON) - race/ethnicity, first-gen, international, disabilities
+    student_demographics = Column(String, nullable=True)  # JSON: {white_pct, black_pct, hispanic_pct, asian_pct, first_gen_pct, international_pct, students_with_disabilities_pct}
+    
+    # Disability enrollment info - NOT YET AVAILABLE
+    # IPEDS is expanding to collect this starting 2025 collection (data available 2027-2028)
+    # Currently no reliable API source exists for college-specific disability type breakdowns
+    # See DATA_SOURCES_RESEARCH.md for details
+    # disability_enrollment = Column(String, nullable=True)  # DEPRECATED - no real data source
+    
     created_at = Column(DateTime, server_default=func.now())
     
     # Relationship
@@ -132,6 +146,9 @@ class UniversityAccessibilityInfo(Base):
     # Other resources
     counseling_services = Column(String, nullable=True)          # e.g., "On-campus counseling available"
     health_services = Column(String, nullable=True)              # e.g., "On-campus health center"
+    
+    # City-level data (stored as JSON) - consolidated for easier access
+    city_overview = Column(String, nullable=True)                # JSON: {transit_accessibility, cost_of_living, political_climate, etc}
     
     created_at = Column(DateTime, server_default=func.now())
     

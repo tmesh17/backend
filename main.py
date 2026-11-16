@@ -14,6 +14,7 @@ Run with: uvicorn main:app --reload --port 8000
 """
 import os
 import uuid
+import json
 from typing import Optional
 from fastapi import FastAPI, Depends, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
@@ -81,6 +82,13 @@ def accessibility_info_to_dict(accessibility_info: UniversityAccessibilityInfo) 
     if accessibility_info.health_services:
         result["health_services"] = accessibility_info.health_services
     
+    # Include city overview data
+    if accessibility_info.city_overview:
+        try:
+            result["city_overview"] = json.loads(accessibility_info.city_overview)
+        except:
+            pass
+    
     return result if result else None
 
 
@@ -104,6 +112,13 @@ def university_summary_to_dict(summary: UniversitySummary) -> dict:
         ]
     if summary.school_ownership:
         result["school_ownership"] = summary.school_ownership
+    
+    # Include student demographics if available
+    if summary.student_demographics:
+        try:
+            result["student_demographics"] = json.loads(summary.student_demographics)
+        except:
+            pass
     
     return result if result else None
 
