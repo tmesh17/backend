@@ -73,9 +73,10 @@ python seed.py
 ```
 
 This will:
-- Create 2 test colleges (UW Seattle, WSU Spokane) with sample reviews
+- Create 2 test colleges (UW Seattle, WSU Spokane) with sample reviews and real API data
 - Fetch ~6,000 US colleges from the College Scorecard API
-- Insert all colleges into the database
+- Store IPEDS UnitID and County FIPS codes for all colleges
+- Populate persistent SQLite database (`.../collegescore.db`)
 
 **To enable College Scorecard import:**
 
@@ -84,11 +85,11 @@ This will:
    ```
    SCORECARD_API_KEY=your-key-here
    ```
-3. Re-run `python seed.py`
+3. Run `python seed.py`
 
 The seed script will:
-- Always import test colleges with full data
-- Skip if `SCORECARD_API_KEY` is not set
+- Always import test colleges with full real data
+- Skip if `SCORECARD_API_KEY` is not set (test colleges only)
 - Safely handle re-runs (won't duplicate existing colleges)
 
 ## API Endpoints
