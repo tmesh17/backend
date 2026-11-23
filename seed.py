@@ -432,25 +432,47 @@ def run_seed():
     print("COLLEGE SCORE DATABASE SEED")
     print("=" * 70)
     
+    # Ensure tables exist with current schema
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
+    
+    # Debug: verify tables were created
+    try:
+        db.query(College).count()
+        db.query(UniversitySummary).count()
+        db.query(UniversityAccessibilityInfo).count()
+        print("✓ Database tables verified\n")
+    except Exception as e:
+        print(f"✗ Database initialization error: {e}")
+        print("  Try deleting collegescore.db and running seed again\n")
+        db.close()
+        return
 
     # ========================================================================
     # PHASE 1: Seed hardcoded test colleges with full data
     # ========================================================================
     print("\n[PHASE 1] Seeding test colleges (UW Seattle, WSU Spokane)...")
     
-    for c in COLLEGES:
-        get_or_create_college(db, c)
-    print(f"  ✓ {len(COLLEGES)} test colleges created/verified")
+    try:
+        for c in COLLEGES:
+            get_or_create_college(db, c)
+        print(f"  ✓ {len(COLLEGES)} test colleges created/verified")
 
-    # Seed accessibility info
-    for info in ACCESSIBILITY_INFO:
-        existing = db.query(UniversityAccessibilityInfo).filter(
-            UniversityAccessibilityInfo.college_slug == info["college_slug"]
-        ).first()
-        if not existing:
-            accessibility_info = UniversityAccessibilityInfo(**info)
+        # Seed accessibility info
+        print("\n  Fetching city overview data for test colleges...")
+        for info in ACCESSIBILITY_INFO:
+            existing = db.query(UniversityAccessibilityInfo).filter(
+                UniversityAccessibilityInfo.college_slug == info["college_slug"]
+            ).first()
+            
+            if existing and existing.city_overview:
+                print(f"  ✓ City overview already set for {info['college_slug']}")
+                continue
+            
+            if not existing:
+                accessibility_info = UniversityAccessibilityInfo(**info)
+            else:
+                accessibility_info = existing
             
             # Fetch real city overview data
             college_data = None
@@ -466,20 +488,31 @@ def run_seed():
                     if city_overview:
                         accessibility_info.city_overview = json.dumps(city_overview)
                         print(f"  ✓ Fetched real city overview data for {college_data['city']}, {college_data['state']}")
+                    else:
+                        print(f"  ⚠ No city overview data returned for {college_data['city']}, {college_data['state']}")
                 except Exception as e:
                     print(f"  ⚠ Could not fetch real city data for {college_data['city']}: {e}")
             
-            db.add(accessibility_info)
-    db.commit()
-    print(f"  ✓ {len(ACCESSIBILITY_INFO)} accessibility info entries created")
+            if not existing:
+                db.add(accessibility_info)
+        db.commit()
+        print(f"  ✓ {len(ACCESSIBILITY_INFO)} accessibility info entries ready")
 
-    # Seed university summary info
-    for summary in UNIVERSITY_SUMMARY:
-        existing = db.query(UniversitySummary).filter(
-            UniversitySummary.college_slug == summary["college_slug"]
-        ).first()
-        if not existing:
-            univ_summary = UniversitySummary(**summary)
+        # Seed university summary info
+        print("\n  Fetching student demographics for test colleges...")
+        for summary in UNIVERSITY_SUMMARY:
+            existing = db.query(UniversitySummary).filter(
+                UniversitySummary.college_slug == summary["college_slug"]
+            ).first()
+            
+            if existing and existing.student_demographics:
+                print(f"  ✓ Student demographics already set for {summary['college_slug']}")
+                continue
+            
+            if not existing:
+                univ_summary = UniversitySummary(**summary)
+            else:
+                univ_summary = existing
             
             # Fetch real student demographics from College Scorecard API
             college_name = None
@@ -496,24 +529,34 @@ def run_seed():
                         demographics.pop("source", None)  # Remove source before storing
                         univ_summary.student_demographics = json.dumps(demographics)
                         print(f"  ✓ Fetched real student demographics for {college_name}")
+                    else:
+                        print(f"  ⚠ No student demographics returned for {college_name}")
                 except Exception as e:
                     print(f"  ⚠ Could not fetch real demographics for {college_name}: {e}")
             
-            db.add(univ_summary)
-    db.commit()
-    print(f"  ✓ {len(UNIVERSITY_SUMMARY)} university summary entries created")
+            if not existing:
+                db.add(univ_summary)
+        db.commit()
+        print(f"  ✓ {len(UNIVERSITY_SUMMARY)} university summary entries ready")
 
-    # Seed reviews for test colleges
-    for slug, *data in REVIEWS:
-        create_review(db, slug, data)
-    db.commit()
-    print(f"  ✓ {len(REVIEWS)} reviews created for test colleges")
+        # Seed reviews for test colleges
+        for slug, *data in REVIEWS:
+            create_review(db, slug, data)
+        db.commit()
+        print(f"  ✓ {len(REVIEWS)} reviews created for test colleges")
 
-    # Update ratings
-    for c in COLLEGES:
-        update_college_ratings(db, c["slug"])
-    db.commit()
-    print(f"  ✓ Aggregate ratings calculated")
+        # Update ratings
+        for c in COLLEGES:
+            update_college_ratings(db, c["slug"])
+        db.commit()
+        print(f"  ✓ Aggregate ratings calculated")
+    
+    except Exception as e:
+        print(f"\n✗ PHASE 1 ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        db.close()
+        return
 
     # ========================================================================
     # PHASE 2: Fetch and seed colleges from College Scorecard API
