@@ -61,13 +61,13 @@ def fetch_census_city_demographics(city: str, state: str) -> Optional[Dict[str, 
     """
     api_key = os.getenv("CENSUS_API_KEY")
     if not api_key:
-        print(f"Warning: CENSUS_API_KEY not set. Cannot fetch demographics for {city}, {state}")
+        print(f"    Warning: CENSUS_API_KEY not set")
         return None
     
     # Get FIPS codes for city
     fips_codes = CITY_FIPS_CODES.get((city, state))
     if not fips_codes:
-        print(f"Warning: FIPS code not found for {city}, {state}")
+        print(f"    Warning: FIPS code not found for {city}, {state}")
         return None
     
     state_code, place_code = fips_codes
@@ -93,7 +93,13 @@ def fetch_census_city_demographics(city: str, state: str) -> Optional[Dict[str, 
             "key": api_key
         }
         
+        print(f"    API call: {url}?for=place:{place_code}&in=state:{state_code}")
         response = requests.get(url, params=params, timeout=10)
+        
+        if response.status_code != 200:
+            print(f"    Census API returned status {response.status_code}: {response.text[:200]}")
+            return None
+        
         response.raise_for_status()
         
         data = response.json()
@@ -115,16 +121,21 @@ def fetch_census_city_demographics(city: str, state: str) -> Optional[Dict[str, 
                 "source": "US Census Bureau (American Community Survey)"
             }
             
+            print(f"    Got {len(result)} demographic fields")
             return result
+        else:
+            print(f"    Census API returned no data rows")
+            return None
         
     except requests.RequestException as e:
-        print(f"Error fetching Census data for {city}, {state}: {e}")
+        print(f"    Census API request failed: {e}")
         return None
     except (IndexError, ValueError) as e:
-        print(f"Error parsing Census data: {e}")
+        print(f"    Error parsing Census data: {e}")
         return None
-    
-    return None
+    except Exception as e:
+        print(f"    Unexpected error: {e}")
+        return None
 
 
 
@@ -228,20 +239,34 @@ def build_city_overview(college_data: Dict[str, Any]) -> Optional[Dict[str, Any]
     state = college_data.get("state")
     
     if not city or not state:
+        print(f"  ✗ City or state missing: city={city}, state={state}")
         return None
     
     city_overview = {}
     
     # Fetch each data source
+    print(f"    Fetching transit accessibility for {city}, {state}...")
     transit = fetch_transit_accessibility_data(city, state)
     if transit:
         city_overview["transit_accessibility"] = transit
+        print(f"    ✓ Got transit data")
+    else:
+        print(f"    ✗ No transit data (not in lookup table or fetch failed)")
     
+    print(f"    Fetching Census diversity for {city}, {state}...")
     diversity = fetch_census_city_demographics(city, state)
     if diversity:
         city_overview["diversity"] = diversity
+        print(f"    ✓ Got Census diversity data")
+    else:
+        print(f"    ✗ No Census diversity data (API call failed or no data)")
     
-    return city_overview if city_overview else None
+    if not city_overview:
+        print(f"  ✗ No city overview data available for {city}, {state}")
+        return None
+    
+    print(f"  ✓ City overview complete with {len(city_overview)} data sources")
+    return city_overview
 
 
 # ENRICH_TEST_COLLEGES is now deprecated - use real API calls instead
