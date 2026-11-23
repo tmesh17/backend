@@ -465,16 +465,12 @@ def run_seed():
                 UniversityAccessibilityInfo.college_slug == info["college_slug"]
             ).first()
             
-            if existing and existing.city_overview:
-                print(f"  ✓ City overview already set for {info['college_slug']}")
-                continue
-            
             if not existing:
                 accessibility_info = UniversityAccessibilityInfo(**info)
             else:
                 accessibility_info = existing
             
-            # Fetch real city overview data
+            # Fetch real city overview data - always refresh for test colleges
             college_data = None
             for college in COLLEGES:
                 if college["slug"] == info["college_slug"]:
@@ -482,16 +478,21 @@ def run_seed():
                     break
             
             if college_data:
+                print(f"  Fetching city overview for {college_data['city']}, {college_data['state']}...")
                 try:
                     from integrations import build_city_overview
                     city_overview = build_city_overview(college_data)
                     if city_overview:
                         accessibility_info.city_overview = json.dumps(city_overview)
-                        print(f"  ✓ Fetched real city overview data for {college_data['city']}, {college_data['state']}")
+                        print(f"  ✓ Stored city overview for {college_data['city']}, {college_data['state']}")
                     else:
-                        print(f"  ⚠ No city overview data returned for {college_data['city']}, {college_data['state']}")
+                        print(f"  ✗ No city overview data returned for {college_data['city']}, {college_data['state']}")
                 except Exception as e:
-                    print(f"  ⚠ Could not fetch real city data for {college_data['city']}: {e}")
+                    print(f"  ✗ Exception fetching city data: {e}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                print(f"  ⚠ College data not found for {info['college_slug']}")
             
             if not existing:
                 db.add(accessibility_info)
@@ -505,16 +506,12 @@ def run_seed():
                 UniversitySummary.college_slug == summary["college_slug"]
             ).first()
             
-            if existing and existing.student_demographics:
-                print(f"  ✓ Student demographics already set for {summary['college_slug']}")
-                continue
-            
             if not existing:
                 univ_summary = UniversitySummary(**summary)
             else:
                 univ_summary = existing
             
-            # Fetch real student demographics from College Scorecard API
+            # Fetch real student demographics from College Scorecard API - always refresh for test colleges
             college_name = None
             for college in COLLEGES:
                 if college["slug"] == summary["college_slug"]:
@@ -522,17 +519,20 @@ def run_seed():
                     break
             
             if college_name:
+                print(f"  Fetching student demographics for {college_name}...")
                 try:
                     from integrations import fetch_college_student_demographics
                     demographics = fetch_college_student_demographics(college_name)
                     if demographics:
                         demographics.pop("source", None)  # Remove source before storing
                         univ_summary.student_demographics = json.dumps(demographics)
-                        print(f"  ✓ Fetched real student demographics for {college_name}")
+                        print(f"  ✓ Stored student demographics for {college_name}")
                     else:
-                        print(f"  ⚠ No student demographics returned for {college_name}")
+                        print(f"  ✗ No student demographics returned for {college_name}")
                 except Exception as e:
-                    print(f"  ⚠ Could not fetch real demographics for {college_name}: {e}")
+                    print(f"  ✗ Exception fetching demographics: {e}")
+                    import traceback
+                    traceback.print_exc()
             
             if not existing:
                 db.add(univ_summary)
